@@ -8,15 +8,18 @@ import com.feurstagram.patches.shared.Constants.EXTENSION
 
 private const val SETTINGS_CLASS = "Lcom/feurstagram/extension/Settings;"
 
-// ─── MainTabActivity.onResume ────────────────────────────────────────────────
-// MainTabActivity is Instagram's main launcher activity and is NEVER obfuscated.
-// Its onResume() runs every time the user opens or switches back to Instagram.
-// We inject a call to Settings.installFromActivity(this) at index 0 of onResume().
-// Since onResume() always has p0 (this = Activity), this single-register call is
-// 100% reliable across ALL Instagram versions without needing obfuscated fingerprints.
-internal object MainTabActivityOnResumeFingerprint : Fingerprint(
-    definingClass = "Lcom/instagram/mainactivity/MainTabActivity;",
+/**
+ * Fingerprint for Instagram's main activity: com.instagram.mainactivity.InstagramMainActivity.
+ * Tries onResume first, falls back to onCreate.
+ */
+internal object InstagramMainActivityOnResumeFingerprint : Fingerprint(
+    definingClass = "Lcom/instagram/mainactivity/InstagramMainActivity;",
     name = "onResume",
+)
+
+internal object InstagramMainActivityOnCreateFingerprint : Fingerprint(
+    definingClass = "Lcom/instagram/mainactivity/InstagramMainActivity;",
+    name = "onCreate",
 )
 
 @Suppress("unused")
@@ -29,7 +32,13 @@ val settingsEntryPointPatch = bytecodePatch(
     extendWith(EXTENSION)
 
     execute {
-        MainTabActivityOnResumeFingerprint.method.apply {
+        val targetMethod = runCatching {
+            InstagramMainActivityOnResumeFingerprint.method
+        }.getOrElse {
+            InstagramMainActivityOnCreateFingerprint.method
+        }
+
+        targetMethod.apply {
             addInstructions(
                 0,
                 "invoke-static { p0 }, $SETTINGS_CLASS->installFromActivity(Landroid/app/Activity;)V",
