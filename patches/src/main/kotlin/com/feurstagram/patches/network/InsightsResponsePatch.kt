@@ -20,7 +20,7 @@ private const val MOCKER_CLASS = "Lcom/feurstagram/extension/InsightsMocker;"
  * to intercept response body byte arrays and rewrite metric values in-process.
  */
 
-internal object TigonStartRequestFingerprint : Fingerprint(
+internal object InsightsTigonStartRequestFingerprint : Fingerprint(
     definingClass = "Lcom/instagram/api/tigon/TigonServiceLayer;",
     name = "startRequest",
 )
@@ -52,7 +52,7 @@ val insightsResponsePatch = bytecodePatch(
             runCatching {
                 ResponseBodyStringFingerprint.method
             }.getOrElse {
-                TigonStartRequestFingerprint.method
+                InsightsTigonStartRequestFingerprint.method
             }
         }
 
