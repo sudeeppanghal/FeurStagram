@@ -85,8 +85,38 @@ public final class InsightsConfig {
     public static void setOverride(String mediaId, String metric, long value) {
         SharedPreferences p = prefs();
         if (p == null) return;
-        p.edit().putLong(key(mediaId, metric), value).apply();
+        p.edit().putLong(key(mediaId, metric), value)
+                .putBoolean("insights_editor_enabled", true)
+                .apply();
         addToMediaIds(mediaId);
+    }
+
+    /** Returns true if ANY media ID or dashboard override is saved. */
+    public static boolean hasAnyOverride() {
+        Set<String> ids = getMediaIds();
+        return (ids != null && !ids.isEmpty()) || hasDashboardOverrides();
+    }
+
+    /** Returns true if any dashboard-level metrics are saved. */
+    public static boolean hasDashboardOverrides() {
+        SharedPreferences p = prefs();
+        if (p == null) return false;
+        String[] dashboardMetrics = {
+            "total_impressions", "total_reach", "total_profile_views",
+            "followers_count", "accounts_reached", "accounts_engaged",
+            "total_video_views", "video_view_count", "plays", "reach", "impressions"
+        };
+        for (String m : dashboardMetrics) {
+            if (p.contains("dash_" + m)) return true;
+        }
+        return false;
+    }
+
+    /** Returns the first mediaId with overrides, or null. */
+    public static String getFirstMediaId() {
+        Set<String> ids = getMediaIds();
+        if (ids != null && !ids.iterator().hasNext()) return null;
+        return ids != null && !ids.isEmpty() ? ids.iterator().next() : null;
     }
 
     public static void removeOverride(String mediaId, String metric) {

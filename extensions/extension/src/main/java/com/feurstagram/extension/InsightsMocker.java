@@ -2,99 +2,133 @@ package com.feurstagram.extension;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Core insights interception engine.
+ * Enhanced insights interception engine.
  *
- * Called from the injected TigonServiceLayer response hook with the raw
- * response body bytes. If insights editor is disabled, or the path doesn't
- * match an insights endpoint, the original bytes are returned unchanged.
+ * Intercepts Instagram API network response bodies (GraphQL, Bloks, REST, Tigon)
+ * and replaces insights metrics (views, reach, impressions, likes, comments,
+ * shares, saves, country distribution, traffic sources) with user-defined values.
  *
- * Otherwise the JSON is rewritten — individual metric values replaced with
- * overrides from InsightsConfig — and the modified bytes returned.
- *
- * All JSON manipulation is done with simple string operations deliberately:
- * - No external library dependency
- * - Minimal bytecode footprint in the patched APK
- * - Survives Instagram changing its JSON structure (field-name based matching)
+ * Meta/Instagram servers are NEVER updated — only local display bytes are modified.
  */
 public final class InsightsMocker {
 
     private InsightsMocker() {}
 
-    // ─── Insights API path patterns ───────────────────────────────────────────
-
-    private static final String[] INSIGHTS_PATHS = {
-        "/insights/",
-        "/media_insights/",
-        "/clips/insights/",
-        "/business/get_account_insights/",
-        "/creator/account_insights/",
-        "/professional_dashboard/",
-        "professional_dashboard",    // Bloks path prefix
-        "clips_insights",            // Bloks component name
-    };
-
-    // ─── Public entry point ───────────────────────────────────────────────────
-
     /**
      * Intercept and optionally rewrite a response body.
-     *
-     * @param path         the request URI path
-     * @param responseBody the raw response bytes from Meta servers
-     * @return the (possibly modified) response bytes to pass to Instagram's parser
      */
     public static byte[] interceptResponse(String path, byte[] responseBody) {
-        if (!InsightsConfig.isEnabled()) return responseBody;
-        if (path == null || responseBody == null || responseBody.length == 0) return responseBody;
+        // Must be enabled or have overrides set
+        if (!InsightsConfig.isEnabled() && !InsightsConfig.hasAnyOverride()) {
+            return responseBody;
+        }
 
-        if (!matchesInsightsPath(path)) return responseBody;
+        if (responseBody == null || responseBody.length < 10) {
+            return responseBody;
+        }
 
         try {
             String json = new String(responseBody, StandardCharsets.UTF_8);
+            
+            // Fast pre-filter: response must be a JSON object/array
+            if (!json.startsWith("{") && !json.startsWith("[")) {
+                return responseBody;
+            }
+
+            // Check if this response contains relevant insight keys or path markers
+            if (!isInsightsPayload(path, json)) {
+                return responseBody;
+            }
+
             String modified = rewrite(path, json);
-            if (modified == null || modified.equals(json)) return responseBody;
+            if (modified == null || modified.equals(json)) {
+                return responseBody;
+            }
+
             return modified.getBytes(StandardCharsets.UTF_8);
         } catch (Throwable t) {
-            // Never crash Instagram — return the real response on any error
+            // Safety: on any error return original response
             return responseBody;
         }
     }
 
-    // ─── Path matching ────────────────────────────────────────────────────────
-
-    private static boolean matchesInsightsPath(String path) {
-        for (String pattern : INSIGHTS_PATHS) {
-            if (path.contains(pattern)) return true;
+    private static boolean isInsightsPayload(String path, String json) {
+        if (path != null) {
+            String p = path.toLowerCase();
+            if (p.contains("insights") || p.contains("professional") || p.contains("dashboard") ||
+                p.contains("business") || p.contains("creator") || p.contains("graphql") ||
+                p.contains("bloks") || p.contains("media/") || p.contains("clips/")) {
+                return true;
+            }
         }
-        return false;
+        // Content inspection
+        return json.contains("insights") ||
+               json.contains("video_view_count") ||
+               json.contains("play_count") ||
+               json.contains("reach") ||
+               json.contains("impression") ||
+               json.contains("accounts_reached") ||
+               json.contains("like_count");
     }
 
-    // ─── JSON rewriting ───────────────────────────────────────────────────────
-
     private static String rewrite(String path, String json) {
-        // Extract media_id from path if available (e.g. /api/v1/media/12345678/insights/)
-        String mediaId = extractMediaId(path, json);
+        // 1. Identify which mediaId to use for overrides
+        String matchedMediaId = findMatchingMediaId(path, json);
 
-        if (mediaId != null && InsightsConfig.hasOverride(mediaId)) {
-            json = applyPerMediaOverrides(mediaId, json);
+        // Fallback: if no specific mediaId matched, but user has overrides set,
+        // use the first configured mediaId as the default override!
+        if (matchedMediaId == null) {
+            matchedMediaId = InsightsConfig.getFirstMediaId();
         }
 
-        // For dashboard/aggregates, apply dashboard-level overrides
-        if (path.contains("professional_dashboard") || path.contains("account_insights")) {
-            json = applyDashboardOverrides(json);
+        if (matchedMediaId != null) {
+            json = applyPerMediaOverrides(matchedMediaId, json);
         }
+
+        // 2. Dashboard / Aggregate totals
+        json = applyDashboardOverrides(json);
 
         return json;
     }
 
-    // ─── Per-media override application ──────────────────────────────────────
+    private static String findMatchingMediaId(String path, String json) {
+        Set<String> configuredIds = InsightsConfig.getMediaIds();
+        if (configuredIds == null || configuredIds.isEmpty()) return null;
+
+        // Direct check if any configured ID/shortcode appears in path or JSON
+        for (String id : configuredIds) {
+            if (id == null || id.isEmpty()) continue;
+            if ((path != null && path.contains(id)) || json.contains(id)) {
+                return id;
+            }
+        }
+        return null;
+    }
 
     private static String applyPerMediaOverrides(String mediaId, String json) {
-        for (String metric : InsightsConfig.ALL_METRICS) {
-            long override = InsightsConfig.getOverride(mediaId, metric);
-            if (override >= 0) {
-                json = replaceJsonLongValue(json, metric, override);
+        // Map of standard metrics to all possible JSON keys Instagram uses
+        String[][] metricMap = {
+            { InsightsConfig.VIEWS, "video_view_count", "play_count", "plays", "replays", "fb_play_count", "view_count", "total_video_views", "total_plays" },
+            { InsightsConfig.LIKES, "like_count", "likes" },
+            { InsightsConfig.COMMENTS, "comment_count", "comments" },
+            { InsightsConfig.SHARES, "share_count", "shares", "forward_count" },
+            { InsightsConfig.SAVES, "save_count", "saves", "bookmark_count" },
+            { InsightsConfig.REACH, "reach", "accounts_reached", "total_reach", "organic_reach" },
+            { InsightsConfig.IMPRESSIONS, "impression_count", "impressions", "total_impressions" },
+            { InsightsConfig.PLAYS, "plays", "play_count" },
+            { InsightsConfig.REPLAYS, "replays" },
+        };
+
+        for (String[] mapping : metricMap) {
+            String primaryMetric = mapping[0];
+            long value = InsightsConfig.getOverride(mediaId, primaryMetric);
+            if (value >= 0) {
+                for (int i = 1; i < mapping.length; i++) {
+                    json = replaceJsonLongValue(json, mapping[i], value);
+                }
             }
         }
 
@@ -113,10 +147,7 @@ public final class InsightsMocker {
         return json;
     }
 
-    // ─── Dashboard aggregate override ────────────────────────────────────────
-
     private static String applyDashboardOverrides(String json) {
-        // Dashboard-level metric field names (may differ from per-media names)
         String[] dashboardMetrics = {
             "total_impressions", "total_reach", "total_profile_views",
             "followers_count", "accounts_reached", "accounts_engaged",
@@ -132,25 +163,9 @@ public final class InsightsMocker {
         return json;
     }
 
-    // ─── Core JSON field replacement ─────────────────────────────────────────
-
-    /**
-     * Replaces the first occurrence of "key": <number> with "key": <newValue>.
-     * Works for both integer and float representations (replaces with integer).
-     * Handles whitespace variants: "key" : 123, "key":123, etc.
-     *
-     * This simple approach works because Instagram's insight responses use
-     * consistent field names and numeric values at top level and in nested objects.
-     * We call it once per field; if the same field appears multiple times in the
-     * JSON (e.g. in both a summary and a time-series entry) ALL occurrences are
-     * replaced — which is the correct behaviour for a consistent override.
-     */
     static String replaceJsonLongValue(String json, String fieldName, long newValue) {
         if (json == null || fieldName == null) return json;
 
-        // Pattern: "fieldName" followed by optional whitespace, colon, optional
-        // whitespace, then a numeric value (integer or float, possibly negative).
-        // We replace the entire number token.
         String quotedKey = "\"" + fieldName + "\"";
         int pos = 0;
         StringBuilder sb = new StringBuilder(json.length());
@@ -162,7 +177,6 @@ public final class InsightsMocker {
                 break;
             }
 
-            // Find the colon after the key
             int colonPos = skipWhitespace(json, keyStart + quotedKey.length());
             if (colonPos >= json.length() || json.charAt(colonPos) != ':') {
                 sb.append(json, pos, keyStart + quotedKey.length());
@@ -170,7 +184,6 @@ public final class InsightsMocker {
                 continue;
             }
 
-            // Find the start of the numeric value (skip whitespace after colon)
             int valueStart = skipWhitespace(json, colonPos + 1);
             if (valueStart >= json.length()) {
                 sb.append(json, pos, json.length());
@@ -179,13 +192,11 @@ public final class InsightsMocker {
 
             char firstChar = json.charAt(valueStart);
             if (firstChar != '-' && !Character.isDigit(firstChar)) {
-                // Value is not numeric (e.g. string, boolean) — skip this occurrence
                 sb.append(json, pos, valueStart + 1);
                 pos = valueStart + 1;
                 continue;
             }
 
-            // Find end of the numeric value
             int valueEnd = valueStart;
             if (json.charAt(valueEnd) == '-') valueEnd++;
             while (valueEnd < json.length() &&
@@ -193,7 +204,6 @@ public final class InsightsMocker {
                 valueEnd++;
             }
 
-            // Append everything up to the number, then the new value
             sb.append(json, pos, valueStart);
             sb.append(newValue);
             pos = valueEnd;
@@ -207,59 +217,36 @@ public final class InsightsMocker {
         return from;
     }
 
-    // ─── Country distribution rewriting ──────────────────────────────────────
-
-    /**
-     * Rewrites the country distribution section of an insights response.
-     *
-     * Instagram represents country breakdown as a list of objects:
-     * "country_code": "US", "value": 45  (where value is a percentage or count)
-     *
-     * We replace these values proportionally based on the stored distribution.
-     */
     private static String rewriteCountryDistribution(String json, Map<String, Integer> dist) {
         if (dist == null || dist.isEmpty()) return json;
 
-        // Find the total reach or view count to compute absolute values from %
-        // If not found, use 10000 as a base (produces realistic-looking numbers)
         long baseCount = extractLongValue(json, InsightsConfig.REACH);
         if (baseCount <= 0) baseCount = extractLongValue(json, InsightsConfig.VIEWS);
         if (baseCount <= 0) baseCount = 10000L;
 
-        // Replace each country's value
         for (Map.Entry<String, Integer> entry : dist.entrySet()) {
             String cc = entry.getKey().toUpperCase();
             int pct = entry.getValue();
             long absoluteValue = (baseCount * pct) / 100L;
-
-            // Find the country block containing this country code and replace its value
             json = rewriteCountryValue(json, cc, absoluteValue, pct);
         }
         return json;
     }
 
-    /**
-     * Find a country entry by its code and rewrite the associated value fields.
-     * Handles both {"country_code":"US","value":123} and {"name":"US","count":123} forms.
-     */
     private static String rewriteCountryValue(String json, String countryCode, long absValue, int pctValue) {
         String searchKey = "\"" + countryCode + "\"";
         int pos = json.indexOf(searchKey);
         if (pos < 0) return json;
 
-        // Find the next "value" or "count" field within ~200 chars after the country code
         int searchEnd = Math.min(pos + 200, json.length());
         String region = json.substring(pos, searchEnd);
 
-        // Replace value
         String modified = replaceJsonLongValue(region, "value", absValue);
         modified = replaceJsonLongValue(modified, "count", absValue);
         modified = replaceJsonLongValue(modified, "percentage", pctValue);
 
         return json.substring(0, pos) + modified + json.substring(pos + region.length());
     }
-
-    // ─── Traffic source rewriting ─────────────────────────────────────────────
 
     private static String rewriteTrafficSources(String json, Map<String, Integer> sources) {
         if (sources == null || sources.isEmpty()) return json;
@@ -268,16 +255,11 @@ public final class InsightsMocker {
         if (baseViews <= 0) baseViews = extractLongValue(json, InsightsConfig.REACH);
         if (baseViews <= 0) baseViews = 10000L;
 
-        // Traffic source names as they appear in Instagram's JSON
-        String[] sourceAliases = { "profile", "home", "hashtag", "explore", "other",
-                                   "PROFILE", "HOME", "HASHTAG", "EXPLORE", "OTHER" };
-
         for (Map.Entry<String, Integer> entry : sources.entrySet()) {
             String sourceName = entry.getKey();
             int pct = entry.getValue();
             long absValue = (baseViews * pct) / 100L;
 
-            // Find and replace source entry
             String searchKey = "\"" + sourceName.toLowerCase() + "\"";
             int pos = json.indexOf(searchKey);
             if (pos < 0) {
@@ -296,42 +278,6 @@ public final class InsightsMocker {
         return json;
     }
 
-    // ─── Media ID extraction ─────────────────────────────────────────────────
-
-    /**
-     * Extracts a media ID from the request path (e.g. /api/v1/media/12345678/insights/)
-     * or from the response JSON body (the "id" or "media_id" field).
-     */
-    private static String extractMediaId(String path, String json) {
-        // Try path first: /media/{id}/  or  /clips/{id}/
-        if (path != null) {
-            String[] parts = path.split("/");
-            for (int i = 0; i < parts.length - 1; i++) {
-                String part = parts[i];
-                if (("media".equals(part) || "clips".equals(part)) && i + 1 < parts.length) {
-                    String candidate = parts[i + 1];
-                    if (candidate.matches("[0-9_]+") && candidate.length() > 5) {
-                        return candidate;
-                    }
-                }
-            }
-        }
-
-        // Try JSON body: "media_id": "12345" or "id": "12345"
-        long fromJson = extractLongValue(json, "media_id");
-        if (fromJson > 0) return String.valueOf(fromJson);
-
-        // "id" field — only if it looks like a media ID (long number)
-        fromJson = extractLongValue(json, "pk");
-        if (fromJson > 0) return String.valueOf(fromJson);
-
-        return null;
-    }
-
-    /**
-     * Extracts a long value for the given field name from a JSON string.
-     * Returns -1 if not found or not a number.
-     */
     static long extractLongValue(String json, String fieldName) {
         if (json == null || fieldName == null) return -1L;
         String quotedKey = "\"" + fieldName + "\"";
@@ -344,7 +290,6 @@ public final class InsightsMocker {
         int valueStart = skipWhitespace(json, colonPos + 1);
         if (valueStart >= json.length()) return -1L;
 
-        // Handle quoted numbers: "12345"
         char fc = json.charAt(valueStart);
         if (fc == '"') {
             int end = json.indexOf('"', valueStart + 1);
@@ -354,7 +299,6 @@ public final class InsightsMocker {
             } catch (NumberFormatException e) { return -1L; }
         }
 
-        // Unquoted numbers
         if (fc != '-' && !Character.isDigit(fc)) return -1L;
         int valueEnd = valueStart;
         if (json.charAt(valueEnd) == '-') valueEnd++;
