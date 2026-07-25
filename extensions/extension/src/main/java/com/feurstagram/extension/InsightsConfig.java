@@ -93,7 +93,7 @@ public final class InsightsConfig {
 
     /** Returns true if ANY media ID or dashboard override is saved. */
     public static boolean hasAnyOverride() {
-        Set<String> ids = getMediaIds();
+        Set<String> ids = getAllMediaIds();
         return (ids != null && !ids.isEmpty()) || hasDashboardOverrides();
     }
 
@@ -107,16 +107,16 @@ public final class InsightsConfig {
             "total_video_views", "video_view_count", "plays", "reach", "impressions"
         };
         for (String m : dashboardMetrics) {
-            if (p.contains("dash_" + m)) return true;
+            if (p.contains("dashboard_override_" + m)) return true;
         }
         return false;
     }
 
     /** Returns the first mediaId with overrides, or null. */
     public static String getFirstMediaId() {
-        Set<String> ids = getMediaIds();
-        if (ids != null && !ids.iterator().hasNext()) return null;
-        return ids != null && !ids.isEmpty() ? ids.iterator().next() : null;
+        Set<String> ids = getAllMediaIds();
+        if (ids == null || ids.isEmpty()) return null;
+        return ids.iterator().next();
     }
 
     public static void removeOverride(String mediaId, String metric) {

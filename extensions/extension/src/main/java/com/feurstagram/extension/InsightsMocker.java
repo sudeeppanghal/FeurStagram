@@ -95,7 +95,7 @@ public final class InsightsMocker {
     }
 
     private static String findMatchingMediaId(String path, String json) {
-        Set<String> configuredIds = InsightsConfig.getMediaIds();
+        Set<String> configuredIds = InsightsConfig.getAllMediaIds();
         if (configuredIds == null || configuredIds.isEmpty()) return null;
 
         // Direct check if any configured ID/shortcode appears in path or JSON
