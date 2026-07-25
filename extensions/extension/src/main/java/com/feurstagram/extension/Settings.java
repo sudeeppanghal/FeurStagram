@@ -118,9 +118,7 @@ public final class Settings {
             public void onActivityStopped(Activity activity) {}
 
             @Override
-            public void onActivitySaveInstanceState(Activity activity, android.os.Bundle outState) {}
-
-            @Override
+            public void onActivitySaveInstanceState(Activity activity, android.os.Bundle outState) {}            @Override
             public void onActivityDestroyed(Activity activity) {}
         });
     }
@@ -133,57 +131,42 @@ public final class Settings {
                 if (!(activity.getWindow().getDecorView() instanceof FrameLayout)) return;
                 FrameLayout decor = (FrameLayout) activity.getWindow().getDecorView();
                 
-                // Avoid adding duplicate button to the same window
-                if (decor.findViewWithTag("feurstagram_fab") != null) return;
-                
-                // Create floating pill button for Insights Editor
-                Button fab = new Button(activity);
-                fab.setTag("feurstagram_fab");
-                fab.setText("📊 Insights");
-                fab.setAllCaps(false);
-                fab.setTextColor(0xFFFFFFFF);
-                fab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-                fab.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-                fab.setPadding(dp(activity, 14), dp(activity, 6), dp(activity, 14), dp(activity, 6));
-                fab.setMinimumWidth(0);
-                fab.setMinimumHeight(0);
-                
-                // Dark pill with purple gradient border
-                GradientDrawable bg = new GradientDrawable();
-                bg.setColor(0xEE1C1B1F); // Dark semi-transparent
-                bg.setCornerRadius(dp(activity, 20));
-                bg.setStroke(dp(activity, 1.5f), 0xFF833AB4); // Instagram purple border
-                fab.setBackground(ripple(RIPPLE, bg));
-                
-                // Position at top-right below status bar
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT);
-                lp.gravity = Gravity.TOP | Gravity.END;
-                lp.topMargin = statusBarHeight(activity) + dp(activity, 8);
-                lp.rightMargin = dp(activity, 12);
-                
-                // Click opens Insights Editor directly!
-                fab.setOnClickListener(v -> {
-                    try {
-                        InsightsEditorDialog.show(activity);
-                    } catch (Throwable t) {
-                        Toast.makeText(activity, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
+                // Avoid attaching duplicate touch listener
+                if (decor.getTag(0x7F0A0001) != null) return;
+                decor.setTag(0x7F0A0001, Boolean.TRUE);
+
+                // GestureDetector for double-tap or long-press on top header bar
+                android.view.GestureDetector detector = new android.view.GestureDetector(activity,
+                        new android.view.GestureDetector.SimpleOnGestureListener() {
+                            @Override
+                            public boolean onDoubleTap(android.view.MotionEvent e) {
+                                // Double tap on top 15% of screen opens Insights Editor
+                                if (e.getY() < activity.getResources().getDisplayMetrics().heightPixels * 0.15f) {
+                                    try {
+                                        InsightsEditorDialog.show(activity);
+                                        return true;
+                                    } catch (Throwable ignored) {}
+                                }
+                                return false;
+                            }
+
+                            @Override
+                            public void onLongPress(android.view.MotionEvent e) {
+                                // Long press on top 15% of screen opens Insights Editor
+                                if (e.getY() < activity.getResources().getDisplayMetrics().heightPixels * 0.15f) {
+                                    try {
+                                        InsightsEditorDialog.show(activity);
+                                    } catch (Throwable ignored) {}
+                                }
+                            }
+                        });
+
+                // Attach touch listener transparently without blocking normal touch events
+                decor.setOnTouchListener((v, event) -> {
+                    detector.onTouchEvent(event);
+                    return false; // Return false so Instagram handles taps normally!
                 });
-                
-                // Long click opens FeurStagram Settings
-                fab.setOnLongClickListener(v -> {
-                    try {
-                        Settings.show(activity);
-                    } catch (Throwable t) {
-                        Toast.makeText(activity, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
-                    return true;
-                });
-                
-                decor.addView(fab, lp);
-                
+
             } catch (Throwable t) {
                 // Ignore layout errors silently
             }
