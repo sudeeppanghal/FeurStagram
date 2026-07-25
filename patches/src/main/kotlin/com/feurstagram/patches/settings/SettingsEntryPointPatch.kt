@@ -9,16 +9,11 @@ import com.feurstagram.patches.shared.Constants.EXTENSION
 private const val SETTINGS_CLASS = "Lcom/feurstagram/extension/Settings;"
 
 /**
- * Fingerprint for Instagram's main activity: com.instagram.mainactivity.InstagramMainActivity.
- * Tries onResume first, falls back to onCreate.
+ * Fingerprint for Instagram's Application shell: com.instagram.app.InstagramAppShell.
+ * The onCreate() method runs immediately when Instagram launches.
  */
-internal object InstagramMainActivityOnResumeFingerprint : Fingerprint(
-    definingClass = "Lcom/instagram/mainactivity/InstagramMainActivity;",
-    name = "onResume",
-)
-
-internal object InstagramMainActivityOnCreateFingerprint : Fingerprint(
-    definingClass = "Lcom/instagram/mainactivity/InstagramMainActivity;",
+internal object InstagramAppShellFingerprint : Fingerprint(
+    definingClass = "Lcom/instagram/app/InstagramAppShell;",
     name = "onCreate",
 )
 
@@ -32,16 +27,10 @@ val settingsEntryPointPatch = bytecodePatch(
     extendWith(EXTENSION)
 
     execute {
-        val targetMethod = runCatching {
-            InstagramMainActivityOnResumeFingerprint.method
-        }.getOrElse {
-            InstagramMainActivityOnCreateFingerprint.method
-        }
-
-        targetMethod.apply {
+        InstagramAppShellFingerprint.method.apply {
             addInstructions(
                 0,
-                "invoke-static { p0 }, $SETTINGS_CLASS->installFromActivity(Landroid/app/Activity;)V",
+                "invoke-static { p0 }, $SETTINGS_CLASS->init(Landroid/app/Application;)V",
             )
         }
     }

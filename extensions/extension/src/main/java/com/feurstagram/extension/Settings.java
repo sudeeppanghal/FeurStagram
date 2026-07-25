@@ -72,19 +72,53 @@ public final class Settings {
      * Walks the decor view to find the tab bar and installs the long-press watcher.
      * Guarded by a flag so it only runs once per process life.
      */
-    private static volatile boolean sWatcherInstalled = false;
+    /**
+     * Entry point called from InstagramAppShell.onCreate() at process startup.
+     * Registers ActivityLifecycleCallbacks so whenever ANY activity resumes,
+     * we attach the floating 📊 Insights button.
+     */
+    public static void init(android.app.Application app) {
+        if (app == null) return;
+        app.registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityCreated(Activity activity, android.os.Bundle savedInstanceState) {}
+
+            @Override
+            public void onActivityStarted(Activity activity) {}
+
+            @Override
+            public void onActivityResumed(Activity activity) {
+                installFromActivity(activity);
+            }
+
+            @Override
+            public void onActivityPaused(Activity activity) {}
+
+            @Override
+            public void onActivityStopped(Activity activity) {}
+
+            @Override
+            public void onActivitySaveInstanceState(Activity activity, android.os.Bundle outState) {}
+
+            @Override
+            public void onActivityDestroyed(Activity activity) {}
+        });
+    }
 
     public static void installFromActivity(android.app.Activity activity) {
-        if (activity == null || sWatcherInstalled) return;
-        sWatcherInstalled = true;
+        if (activity == null) return;
         
         activity.runOnUiThread(() -> {
             try {
                 if (!(activity.getWindow().getDecorView() instanceof FrameLayout)) return;
                 FrameLayout decor = (FrameLayout) activity.getWindow().getDecorView();
                 
+                // Avoid adding duplicate button to the same window
+                if (decor.findViewWithTag("feurstagram_fab") != null) return;
+                
                 // Create floating pill button for Insights Editor
                 Button fab = new Button(activity);
+                fab.setTag("feurstagram_fab");
                 fab.setText("📊 Insights");
                 fab.setAllCaps(false);
                 fab.setTextColor(0xFFFFFFFF);
@@ -129,9 +163,6 @@ public final class Settings {
                 });
                 
                 decor.addView(fab, lp);
-                
-                // Welcome Toast
-                Toast.makeText(activity, "✨ FeurStagram active — Tap 📊 Insights to edit", Toast.LENGTH_SHORT).show();
                 
             } catch (Throwable t) {
                 // Ignore layout errors silently
