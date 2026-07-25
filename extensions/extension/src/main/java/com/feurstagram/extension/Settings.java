@@ -76,31 +76,65 @@ public final class Settings {
 
     public static void installFromActivity(android.app.Activity activity) {
         if (activity == null || sWatcherInstalled) return;
-        View decor = activity.getWindow().getDecorView();
-        if (decor == null) return;
-        decor.post(() -> {
-            if (sWatcherInstalled) return;
-            Context context = activity;
-            // Try resource id "tab_bar" first
-            int id = Hiders.resolveId(context, "tab_bar");
-            View tabBarView = id != 0 ? decor.findViewById(id) : null;
-            // Fallback: try "navigation_bar"
-            if (tabBarView == null) {
-                int id2 = Hiders.resolveId(context, "navigation_bar");
-                if (id2 != 0) tabBarView = decor.findViewById(id2);
-            }
-            // Fallback: heuristic tree walk
-            if (tabBarView == null) tabBarView = findTabBar(decor);
-
-            if (tabBarView instanceof ViewGroup) {
-                sWatcherInstalled = true;
-                installHomeTabWatcher((ViewGroup) tabBarView);
-            } else if (tabBarView != null) {
-                android.view.ViewParent parent = tabBarView.getParent();
-                if (parent instanceof ViewGroup) {
-                    sWatcherInstalled = true;
-                    installHomeTabWatcher((ViewGroup) parent);
-                }
+        sWatcherInstalled = true;
+        
+        activity.runOnUiThread(() -> {
+            try {
+                if (!(activity.getWindow().getDecorView() instanceof FrameLayout)) return;
+                FrameLayout decor = (FrameLayout) activity.getWindow().getDecorView();
+                
+                // Create floating pill button for Insights Editor
+                Button fab = new Button(activity);
+                fab.setText("📊 Insights");
+                fab.setAllCaps(false);
+                fab.setTextColor(0xFFFFFFFF);
+                fab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+                fab.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+                fab.setPadding(dp(activity, 14), dp(activity, 6), dp(activity, 14), dp(activity, 6));
+                fab.setMinimumWidth(0);
+                fab.setMinimumHeight(0);
+                
+                // Dark pill with purple gradient border
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(0xEE1C1B1F); // Dark semi-transparent
+                bg.setCornerRadius(dp(activity, 20));
+                bg.setStroke(dp(activity, 1.5f), 0xFF833AB4); // Instagram purple border
+                fab.setBackground(ripple(RIPPLE, bg));
+                
+                // Position at top-right below status bar
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.gravity = Gravity.TOP | Gravity.END;
+                lp.topMargin = statusBarHeight(activity) + dp(activity, 8);
+                lp.rightMargin = dp(activity, 12);
+                
+                // Click opens Insights Editor directly!
+                fab.setOnClickListener(v -> {
+                    try {
+                        InsightsEditorDialog.show(activity);
+                    } catch (Throwable t) {
+                        Toast.makeText(activity, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
+                
+                // Long click opens FeurStagram Settings
+                fab.setOnLongClickListener(v -> {
+                    try {
+                        Settings.show(activity);
+                    } catch (Throwable t) {
+                        Toast.makeText(activity, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                });
+                
+                decor.addView(fab, lp);
+                
+                // Welcome Toast
+                Toast.makeText(activity, "✨ FeurStagram active — Tap 📊 Insights to edit", Toast.LENGTH_SHORT).show();
+                
+            } catch (Throwable t) {
+                // Ignore layout errors silently
             }
         });
     }
