@@ -140,10 +140,18 @@ public final class Settings {
                         new android.view.GestureDetector.SimpleOnGestureListener() {
                             @Override
                             public boolean onDoubleTap(android.view.MotionEvent e) {
-                                // Double tap on top 15% of screen opens Insights Editor
-                                if (e.getY() < activity.getResources().getDisplayMetrics().heightPixels * 0.15f) {
+                                float screenW = activity.getResources().getDisplayMetrics().widthPixels;
+                                float screenH = activity.getResources().getDisplayMetrics().heightPixels;
+                                // Double tap on top 15% of screen
+                                if (e.getY() < screenH * 0.15f) {
                                     try {
-                                        InsightsEditorDialog.show(activity);
+                                        if (e.getX() < screenW * 0.5f) {
+                                            // Top Left -> Batman Video & Stream Tools
+                                            BatmanToolsDialog.show(activity);
+                                        } else {
+                                            // Top Right -> Insights Editor
+                                            InsightsEditorDialog.show(activity);
+                                        }
                                         return true;
                                     } catch (Throwable ignored) {}
                                 }
@@ -152,8 +160,8 @@ public final class Settings {
 
                             @Override
                             public void onLongPress(android.view.MotionEvent e) {
-                                // Long press on top 15% of screen opens Insights Editor
-                                if (e.getY() < activity.getResources().getDisplayMetrics().heightPixels * 0.15f) {
+                                float screenH = activity.getResources().getDisplayMetrics().heightPixels;
+                                if (e.getY() < screenH * 0.15f) {
                                     try {
                                         InsightsEditorDialog.show(activity);
                                     } catch (Throwable ignored) {}
@@ -344,6 +352,15 @@ public final class Settings {
                         ViewGroup.LayoutParams.WRAP_CONTENT);
         insightsLp.setMargins(0, dp(context, 12), 0, 0);
         column.addView(insightsBtn, insightsLp);
+
+        Button batmanBtn = makeButton(context, "🦇  Open Batman Video & Stream Tools",
+                0xFFE1306C, 0xFFFFFFFF, true);
+        batmanBtn.setOnClickListener(v -> BatmanToolsDialog.show(context));
+        LinearLayout.LayoutParams batmanLp =
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+        batmanLp.setMargins(0, dp(context, 8), 0, 0);
+        column.addView(batmanBtn, batmanLp);
 
         // ── Updates section ──────────────────────────────────────────────────
         addSectionHeader(context, column, "UPDATES");
