@@ -72,8 +72,28 @@ public final class Settings {
      * Walks the decor view to find the tab bar and installs the long-press watcher.
      * Guarded by a flag so it only runs once per process life.
      */
+    private static volatile boolean sInitialized = false;
+
     /**
-     * Entry point called from InstagramAppShell.onCreate() at process startup.
+     * Called on process start during the first network request.
+     * Obtains the global Application instance via ActivityThread.currentApplication()
+     * and registers ActivityLifecycleCallbacks to attach the floating Insights button.
+     */
+    public static void onNetworkRequest() {
+        if (sInitialized) return;
+        try {
+            android.app.Application app = (android.app.Application) Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null);
+            if (app != null) {
+                sInitialized = true;
+                init(app);
+            }
+        } catch (Throwable t) {
+            // Ignore silently
+        }
+    }
+
+    /**
      * Registers ActivityLifecycleCallbacks so whenever ANY activity resumes,
      * we attach the floating 📊 Insights button.
      */

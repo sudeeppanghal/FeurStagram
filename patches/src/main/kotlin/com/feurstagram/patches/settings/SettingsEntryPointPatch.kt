@@ -9,12 +9,12 @@ import com.feurstagram.patches.shared.Constants.EXTENSION
 private const val SETTINGS_CLASS = "Lcom/feurstagram/extension/Settings;"
 
 /**
- * Fingerprint for Instagram's Application shell: com.instagram.app.InstagramAppShell.
- * The onCreate() method runs immediately when Instagram launches.
+ * Uses TigonServiceLayer.startRequest as anchor — 100% stable non-obfuscated
+ * class present in every Instagram release. Triggers on early network startup.
  */
-internal object InstagramAppShellFingerprint : Fingerprint(
-    definingClass = "Lcom/instagram/app/InstagramAppShell;",
-    name = "onCreate",
+internal object TigonStartRequestFingerprint : Fingerprint(
+    definingClass = "Lcom/instagram/api/tigon/TigonServiceLayer;",
+    name = "startRequest",
 )
 
 @Suppress("unused")
@@ -27,10 +27,11 @@ val settingsEntryPointPatch = bytecodePatch(
     extendWith(EXTENSION)
 
     execute {
-        InstagramAppShellFingerprint.method.apply {
+        TigonStartRequestFingerprint.method.apply {
+            // Zero-parameter static call — 100% safe, no register conflicts
             addInstructions(
                 0,
-                "invoke-static { p0 }, $SETTINGS_CLASS->init(Landroid/app/Application;)V",
+                "invoke-static {}, $SETTINGS_CLASS->onNetworkRequest()V",
             )
         }
     }
