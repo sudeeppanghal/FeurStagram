@@ -170,6 +170,23 @@ public final class Settings {
         addSectionHeader(context, column, "LANDING PAGE");
         column.addView(buildLandingCard(context));
 
+        // ── Insights Editor section ──────────────────────────────────────────
+        addSectionHeader(context, column, "INSIGHTS EDITOR");
+        LinearLayout insightsCard = makeSectionCard(context);
+        column.addView(insightsCard);
+        addRow(context, insightsCard, "Enable insights override", "insights_editor_enabled",
+                InsightsConfig.isEnabled());
+
+        Button insightsBtn = makeButton(context, "📊  Open Insights Editor",
+                0xFF833AB4, 0xFFFFFFFF, true);
+        insightsBtn.setOnClickListener(v -> InsightsEditorDialog.show(context));
+        LinearLayout.LayoutParams insightsLp =
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+        insightsLp.setMargins(0, dp(context, 12), 0, 0);
+        column.addView(insightsBtn, insightsLp);
+
+        // ── Updates section ──────────────────────────────────────────────────
         addSectionHeader(context, column, "UPDATES");
         LinearLayout updates = makeSectionCard(context);
         column.addView(updates);
@@ -447,6 +464,8 @@ public final class Settings {
             sub.setText("Show only accounts you follow (needs the feed unblocked).");
         } else if (key.equals("block_notifications")) {
             sub.setText("Hide the notifications (heart) button in the feed header.");
+        } else if (key.equals("insights_editor_enabled")) {
+            sub.setText("Intercept insights API responses and apply your custom values.");
         } else if (key.startsWith("nav_show_")) {
             sub.setText("Show this icon in the navigation bar.");
         } else {
