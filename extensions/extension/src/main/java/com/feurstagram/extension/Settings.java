@@ -174,8 +174,35 @@ public final class Settings {
         addSectionHeader(context, column, "INSIGHTS EDITOR");
         LinearLayout insightsCard = makeSectionCard(context);
         column.addView(insightsCard);
-        addRow(context, insightsCard, "Enable insights override", "insights_editor_enabled",
-                InsightsConfig.isEnabled());
+
+        // Custom toggle row that calls InsightsConfig directly (not Config.setBlocked)
+        LinearLayout insightsToggleRow = new LinearLayout(context);
+        insightsToggleRow.setOrientation(LinearLayout.HORIZONTAL);
+        insightsToggleRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        insightsToggleRow.setPadding(dp(context, 20), dp(context, 16), dp(context, 20), dp(context, 16));
+        insightsToggleRow.setBackground(ripple(RIPPLE, roundedRect(SURFACE_CONTAINER, 0, context)));
+        LinearLayout insightsTexts = new LinearLayout(context);
+        insightsTexts.setOrientation(LinearLayout.VERTICAL);
+        android.widget.TextView insightsLabel = new android.widget.TextView(context);
+        insightsLabel.setText("Enable insights override");
+        insightsLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f);
+        insightsLabel.setTextColor(ON_SURFACE);
+        insightsTexts.addView(insightsLabel);
+        android.widget.TextView insightsSub = new android.widget.TextView(context);
+        insightsSub.setText("Intercept insights API responses and apply your custom values.");
+        insightsSub.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f);
+        insightsSub.setTextColor(ON_SURFACE_VARIANT);
+        insightsTexts.addView(insightsSub);
+        insightsToggleRow.addView(insightsTexts,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        android.widget.Switch insightsSwitch = new android.widget.Switch(context);
+        insightsSwitch.setChecked(InsightsConfig.isEnabled());
+        insightsSwitch.setShowText(false);
+        insightsSwitch.setTrackTintList(buildStateList(PRIMARY, OUTLINE));
+        insightsSwitch.setThumbTintList(buildStateList(ON_PRIMARY, OUTLINE));
+        insightsSwitch.setOnCheckedChangeListener((btn, checked) -> InsightsConfig.setEnabled(checked));
+        insightsToggleRow.addView(insightsSwitch);
+        insightsCard.addView(insightsToggleRow);
 
         Button insightsBtn = makeButton(context, "📊  Open Insights Editor",
                 0xFF833AB4, 0xFFFFFFFF, true);
