@@ -90,19 +90,13 @@ val settingsEntryPointPatch = bytecodePatch(
         if (primarySuccess) return@execute  // primary worked, done
 
         // ── Fallback: hook MainTabActivity.onResume ───────────────────────
-        // onResume gives us the Activity context. We call a new overload
-        // installFromActivity(Activity) which posts a Runnable on the
-        // activity's root view to find the tab bar after layout.
+        // IMPORTANT: onResume() only has p0 (this). We pass p0 directly to
+        // installFromActivity(Activity) — a single-register call that
+        // always works regardless of how many locals onResume declares.
         MainTabActivityOnResumeFingerprint.method.apply {
-            // Insert at index 0 — before any existing onResume logic — so
-            // the watcher is always registered regardless of super calls.
             addInstructions(
                 0,
-                "invoke-virtual { p0 }, Landroid/app/Activity;->getWindow()Landroid/view/Window;\n" +
-                    "move-result-object v0\n" +
-                    "invoke-virtual { v0 }, Landroid/view/Window;->getDecorView()Landroid/view/View;\n" +
-                    "move-result-object v0\n" +
-                    "invoke-static { v0 }, $SETTINGS_CLASS->installFromDecorView(Landroid/view/View;)V",
+                "invoke-static { p0 }, $SETTINGS_CLASS->installFromActivity(Landroid/app/Activity;)V",
             )
         }
     }

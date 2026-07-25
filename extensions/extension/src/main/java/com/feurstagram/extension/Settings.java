@@ -67,51 +67,61 @@ public final class Settings {
     }
 
     /**
-     * Fallback entry point used when the obfuscated tab-bar binder fingerprint
-     * doesn't match. Called from MainTabActivity.onResume with the window decor
-     * view, which is always present. Posts a short delay then walks the view tree
-     * to find the bottom tab bar ViewGroup and installs the watcher on it.
+     * Fallback called from MainTabActivity.onResume via a single-register smali
+     * injection: invoke-static { p0 }, Settings->installFromActivity(Activity)V
+     * Walks the decor view to find the tab bar and installs the long-press watcher.
+     * Guarded by a flag so it only runs once per process life.
      */
-    public static void installFromDecorView(View decorView) {
-        if (decorView == null) return;
-        // Post after current layout pass so children are guaranteed to exist.
-        decorView.post(() -> {
-            Context context = decorView.getContext();
-            if (context == null) return;
+    private static volatile boolean sWatcherInstalled = false;
+
+    public static void installFromActivity(android.app.Activity activity) {
+        if (activity == null || sWatcherInstalled) return;
+        View decor = activity.getWindow().getDecorView();
+        if (decor == null) return;
+        decor.post(() -> {
+            if (sWatcherInstalled) return;
+            Context context = activity;
+            // Try resource id "tab_bar" first
             int id = Hiders.resolveId(context, "tab_bar");
-            View tabBarView = id != 0 ? decorView.findViewById(id) : null;
+            View tabBarView = id != 0 ? decor.findViewById(id) : null;
+            // Fallback: try "navigation_bar"
             if (tabBarView == null) {
-                // Walk the tree: find the first horizontal ViewGroup at the bottom
-                // that contains 4-5 children (the nav tab icons).
-                tabBarView = findTabBar(decorView);
+                int id2 = Hiders.resolveId(context, "navigation_bar");
+                if (id2 != 0) tabBarView = decor.findViewById(id2);
             }
+            // Fallback: heuristic tree walk
+            if (tabBarView == null) tabBarView = findTabBar(decor);
+
             if (tabBarView instanceof ViewGroup) {
+                sWatcherInstalled = true;
                 installHomeTabWatcher((ViewGroup) tabBarView);
             } else if (tabBarView != null) {
-                // Found something but it's not a ViewGroup — try its parent
                 android.view.ViewParent parent = tabBarView.getParent();
                 if (parent instanceof ViewGroup) {
+                    sWatcherInstalled = true;
                     installHomeTabWatcher((ViewGroup) parent);
                 }
             }
         });
     }
 
-    /** Walk the view tree looking for the tab bar by heuristics. */
+    /** Walk the view tree to find the bottom nav tab bar by child-count heuristic. */
     private static View findTabBar(View root) {
         if (!(root instanceof ViewGroup)) return null;
         ViewGroup group = (ViewGroup) root;
         int childCount = group.getChildCount();
-        // Tab bar heuristic: a ViewGroup with 4–6 children, all of similar width,
-        // sitting at the bottom of its parent.
         if (childCount >= 4 && childCount <= 6) {
-            boolean allSimilarWidth = true;
-            int firstWidth = childCount > 0 ? group.getChildAt(0).getMeasuredWidth() : 0;
-            for (int i = 1; i < childCount; i++) {
-                int w = group.getChildAt(i).getMeasuredWidth();
-                if (Math.abs(w - firstWidth) > firstWidth / 2) { allSimilarWidth = false; break; }
+            int firstWidth = group.getChildAt(0).getMeasuredWidth();
+            if (firstWidth > 0) {
+                boolean similar = true;
+                for (int i = 1; i < childCount; i++) {
+                    if (Math.abs(group.getChildAt(i).getMeasuredWidth() - firstWidth) > firstWidth / 2) {
+                        similar = false;
+                        break;
+                    }
+                }
+                if (similar) return group;
             }
-            if (allSimilarWidth && firstWidth > 0) return group;
         }
         for (int i = 0; i < childCount; i++) {
             View found = findTabBar(group.getChildAt(i));
